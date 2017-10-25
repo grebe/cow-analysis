@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import matplotlib.pyplot as plt
+import math
 import numpy as np
 import scipy.signal as sig
 import sys
@@ -17,6 +17,11 @@ def brickwall(flo, fhi, fsamp = 20.0e6, numtaps = 128, deltaf=5e3):
 
     return sig.firwin2(numtaps=numtaps, freq=fpoints, gain=fgains, nyq=fsamp)
 
+def splitADIDump(vec, numSplits):
+    nsamps = vec.size
+    sampsPerSplit = int(math.ceil(float(nsamps) / float(numSplits)))
+    vecs = [vec[i*sampsPerSplit:(i+1)*sampsPerSplit] for i in range(numSplits)]
+    return vecs
 
 def countCompleteCycles(vec):
     # Thanks https://stackoverflow.com/questions/3843017/efficiently-detect-sign-changes-in-python
@@ -37,46 +42,28 @@ def generateTone(SNRdB):
     signalShort[1::2] = signalShortImag
     return signalShort
 
-def completeCyclesAddToFile(fvec, fcounts):
-    vec  = readADIDump(fvec)
-    filt = brickwall(100.0e3, 270.0e3)
-    vec  = np.convolve(vec, filt)
+def completeCyclesAddToFile(vec, vecname, fcounts):
+    # filt = brickwall(100.0e3, 270.0e3)
+    # vec  = np.convolve(vec, filt)
     cycles = countCompleteCycles(vec)
     with open(fcounts, 'a') as histfile:
-        histfile.write(fvec)
+        histfile.write(vecname)
         histfile.write("\t\t")
         histfile.write(str(cycles))
         histfile.write("\n")
-        # histfile.write(f"{fvec}:\t\t{cycles}\n")
+
+def rreplace(s, old, new, occurrence):
+    li = s.rsplit(old, occurrence)
+    return new.join(li)
+
+def fnameSuffix(fname, suffix):
+    return rreplace(fname, ".", suffix+".", 1)
 
 if __name__ == "__main__":
-    completeCyclesAddToFile(sys.argv[1], sys.argv[2])
-
-def oldMain():
-    fname = sys.argv[1]
-    nfft = 2**18
-    sig = readADIDump(fname)
-    plt.plot(sig[:4*2048].real)
-    plt.show()
-    timestep = 400e-9 # ns
-    #timestep = 50e-9
-    # trim to multiples of nfft
-    nwindows = int(len(sig)/nfft)
-    sig = sig[:nwindows*nfft]
-    # average windows
-    print(sig.shape)
-    sig = np.reshape(sig, (nwindows, nfft))
-    sig = np.mean(sig, axis=0)
-    print(sig.shape)
-
-    window = np.hanning(nfft)
-    ps = 20 * np.log10(np.abs(np.fft.fft(sig * window)))
-    freqs = np.fft.fftfreq(sig.size, timestep)
-    idx = np.argsort(freqs)
-
-    plt.plot(freqs[idx], ps[idx])
-    plt.show()
-
-    plt.specgram(sig, NFFT=int(2**12), Fs=1.0/timestep, Fc=0, noverlap=int(2**10))
-    plt.show()
+    vec = readADIDump(sys.argv[1])
+    nSplits = int(sys.argv[2])
+    vec = splitADIDump(vec, nSplits)
+    for i in range(len(vec)):
+        v = vec[i]
+        completeCyclesAddToFile(v, fnameSuffix(sys.argv[1], "_" + str(i)), sys.argv[3])
 
